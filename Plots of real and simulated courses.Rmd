@@ -1,0 +1,782 @@
+---
+title: "Example Simulated Classes"
+author: "Jayson Nissen"
+date: "12/21/2017"
+output:
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(cowplot)
+
+load("/Users/jnissen1/Documents/GitHub/missing_data/classes")
+df$Course<-substr(df$Course,0,4)
+
+#Posttests
+temp <- df[df$Course==1315,c(2,4)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+AAA_post<-ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+ 
+temp <- df[df$Course==1430,c(2,4)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+BBB_post<-ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+  
+temp <- df[df$Course==2425,c(2,4)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+CCC_post<-ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+#Pretests
+temp <- df[df$Course==1315,c(2,3)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+AAA_pre<-ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+ 
+temp <- df[df$Course==1430,c(2,3)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+BBB_pre<-ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+  
+temp <- df[df$Course==2425,c(2,3)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+CCC_pre<-ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade")
+
+course_plots <- ggdraw() +
+  draw_plot(AAA_post, 0, 0, .33, .45) +
+  draw_plot(BBB_post, 0.33, 0, .33, .45) +
+  draw_plot(CCC_post, 0.66, 0, .33, .45) +
+  draw_plot(AAA_pre, 0, .45, .33, .45) +
+  draw_plot(BBB_pre, 0.33, 0.45, .33, .45) +
+  draw_plot(CCC_pre, 0.66, 0.45, .33, .45) +
+  draw_label("Plots for the Lonestar data", x = 0.5, y = 1,
+    vjust = 1, hjust = 0.5, size = 12, fontface = 'bold')
+
+  
+temp <- df[df$Course==1315,c(3,4)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_a <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+ 
+temp <- df[df$Course==1430,c(3,4)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_b <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+temp <- df[df$Course==2425,c(3,4)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_c <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none") +
+  scale_y_continuous(limits = c(0,0.04))
+
+dens_plots <-  ggdraw() +
+  draw_plot(dens_a, 0, 0, .33, .95) +
+  draw_plot(dens_b, 0.33, 0, .33, .95) +
+  draw_plot(dens_c, 0.66, 0, .33, .95) +
+  draw_label("Plots for the Lonestar data", x = 0.5, y = 1,
+            vjust = 1, hjust = 0.5, size = 12, fontface = 'bold')
+
+```
+These are the plots for the course
+
+```{r, echo=FALSE}
+#knitr::opts_chunk$set(fig.width=6, fig.height=4) 
+plot(course_plots)
+plot(dens_plots)
+```
+
+
+```{r,echo=FALSE}
+#Grade distributions
+load("~/Documents/Missing Data/grade_distributions")
+dists$grade <- as.numeric(as.character(dists$grade))
+dists<- dists[order(dists$grade),] #this makes the indexing more logical
+# scores by grade
+load("~/Documents/Missing Data/course_equation_mean")
+#standard deviation sd=-33.2*x^2+14.6x+16.6
+sd_eq<-function(x){
+  if (x <1 ) print("x should be in percent and range from 0 to 100")
+  if (x < 0) stop("'x' must be >= 1")
+  if (x > 100) stop("'x' must be <= 100")
+  -33.2*(x/100)^2+14.6*(x/100)+16.6}
+#Participation rates I haven't made these into an R file yet. Currently they are a csv file.
+#load()
+```
+
+I am generating the datasets using the rtnorm function. The rtnorm function returns a normal distribution of data that is truncated by a set of boundaries. This truncation allows me to limit the scores to be between 0 and 100. The normal distribution isn't quite right because there are often outliers on the scores but it is a close approximation and aligns with the assumptions for how the data is normally analyzed. 
+
+I will generate the pretest scores and the posttest scores seperately. Initially, I wanted to generate the pretest scores and a gain value. Then I would have calculeted the post test by adding these two values. This did not work because it generated a large amount of data that fell outside of [0,100]. The advantage of that approach is that it ties the pre and posttest together. So I would expect the correlations within those data sets (pre/post) to be more realistic. Since the analyses that I want to run are all based onthe means of the groups I don't need to worry about the relationships between pre and post. It may be an issue if I want to run a matched T-test or get an matched effect size.
+
+```{r, echo=FALSE}
+library(msm)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 2 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 2 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+med_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+med_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+##################
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_a <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 2 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 4 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+low_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+low_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_b <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 2 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 3 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+high_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+high_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_c <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+ 
+sim_plots <- ggdraw() +
+  draw_plot(low_post, 0, 0, .33, .5) +
+  draw_plot(med_post, 0.33, 0, .33, .5) +
+  draw_plot(high_post, 0.66, 0, .33, .5) +
+  draw_plot(low_pre, 0, .5, .33, .5) +
+  draw_plot(med_pre, 0.33, 0.5, .33, .5) +
+  draw_plot(high_pre, 0.66, 0.5, .33, .5) 
+
+dens_plots <-  ggdraw() +
+  draw_plot(dens_a, 0, 0, .33, 1) +
+  draw_plot(dens_b, 0.33, 0, .33, 1) +
+  draw_plot(dens_c, 0.66, 0, .33, 1) 
+
+```
+
+```{r, echo=FALSE}
+print("For a course with average grade distribution")
+plot(sim_plots)
+plot(dens_plots)
+```
+
+```{r, echo=FALSE}
+library(msm)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 4 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 2 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+med_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+med_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_a <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 4 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 4 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+low_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+low_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_b <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 4 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 3 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+high_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+high_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_c <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+ 
+sim_plots <- ggdraw() +
+  draw_plot(low_post, 0, 0, .33, .5) +
+  draw_plot(med_post, 0.33, 0, .33, .5) +
+  draw_plot(high_post, 0.66, 0, .33, .5) +
+  draw_plot(low_pre, 0, .5, .33, .5) +
+  draw_plot(med_pre, 0.33, 0.5, .33, .5) +
+  draw_plot(high_pre, 0.66, 0.5, .33, .5) 
+
+dens_plots <-  ggdraw() +
+  draw_plot(dens_a, 0, 0, .33, 1) +
+  draw_plot(dens_b, 0.33, 0, .33, 1) +
+  draw_plot(dens_c, 0.66, 0, .33, 1) 
+
+```
+
+```{r, echo=FALSE}
+print("For a course with low grade distribution")
+plot(sim_plots)
+plot(dens_plots)
+```
+
+
+```{r, echo=FALSE}
+library(msm)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 3 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 2 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+med_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+med_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_a <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 3 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 4 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+low_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+low_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_b <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+
+C <- 1000 # this is the total class size
+K <- 100 #Number of courses
+G <- 3 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #missing rate it varies from 1 to 5
+P <- 3 #This is the courses performance from the generator seed from 1:4
+
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted.
+#grade is stored in the dists[grade,% of that grade]
+A_n <-round(C*dists[1,G],0)
+A_mean <- eq_course[P,2]+dists[1,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  full<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(full)<- "pre"
+B_mean <- eq_course[P,4]+dists[1,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  full$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  full$grade <- dists[1,1] #inputs grade for this chunk of data
+  full$P <- P #inputs the performance group for this chunk of data (P)
+  full$G <- G
+  full$R <- R
+  full$iteration <- "x"
+  
+for(i in 1:5){
+  A_n <-round(C*dists[i,G],0)
+A_mean <- eq_course[P,2]+dists[i,1]*eq_course[P,3] #this just calculates the mean value for this grade and course
+A_sd <- sd_eq(A_mean)
+  temp<-as.data.frame(rtnorm(A_n,A_mean,A_sd,0,100))
+  colnames(temp)<- "pre"
+B_mean <- eq_course[P,4]+dists[i,1]*eq_course[P,5] #this just calculates the mean value for this grade and course
+B_sd <- sd_eq(B_mean)  
+  temp$post <- rtnorm(A_n,B_mean,B_sd,0,100)
+  temp$grade <- dists[i,1] #inputs grade for this chunk of data
+  temp$P <- P #inputs the performance group for this chunk of data (P)
+  temp$G <- G
+  temp$R <- R
+  temp$iteration <- "j"
+  full<- rbind(full,temp)
+}  
+full <- full[!(full$iteration=="x"),]
+
+temp <- full[c(3,1)]
+colnames(temp) <-c("Grade","Pretest")
+temp$Grade<- as.factor(temp$Grade)
+high_pre <- ggplot(temp, aes(x=Grade,y=Pretest)) + 
+  geom_boxplot()+ 
+  scale_y_continuous(name = "Pretest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(3,2)]
+colnames(temp) <-c("Grade","Posttest")
+temp$Grade<- as.factor(temp$Grade)
+high_post <- ggplot(temp, aes(x=Grade,y=Posttest)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "Posttest (%)", limits = c(0,100))+
+  scale_x_discrete(name = "Grade") 
+
+temp <- full[c(1,2)]
+colnames(temp) <-c("Pretest","Posttest")
+temp<-na.omit(melt(temp))
+dens_c <- ggplot(temp, aes(x=value, group=variable, fill=variable)) + 
+  geom_density(alpha=0.5) + scale_x_continuous(name = "Test Score (%)", limits = c(0,100))+theme(legend.position="none")+
+  scale_y_continuous(limits = c(0,0.04))
+ 
+sim_plots <- ggdraw() +
+  draw_plot(low_post, 0, 0, .33, .5) +
+  draw_plot(med_post, 0.33, 0, .33, .5) +
+  draw_plot(high_post, 0.66, 0, .33, .5) +
+  draw_plot(low_pre, 0, .5, .33, .5) +
+  draw_plot(med_pre, 0.33, 0.5, .33, .5) +
+  draw_plot(high_pre, 0.66, 0.5, .33, .5) 
+
+dens_plots <-  ggdraw() +
+  draw_plot(dens_a, 0, 0, .33, 1) +
+  draw_plot(dens_b, 0.33, 0, .33, 1) +
+  draw_plot(dens_c, 0.66, 0, .33, 1) 
+
+```
+
+```{r}
+print("For a course with average grade distribution")
+plot(sim_plots)
+plot(dens_plots)
+```
