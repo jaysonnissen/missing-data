@@ -1,0 +1,553 @@
+---
+title: "Missing Data Analysis for Changing Slope"
+author: "Jayson Nissen"
+date: "1/3/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, echo = TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+
+library(msm)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(hmi)
+library(mice)
+library(mitools)
+library(reshape2)
+library(knitr)
+library(tidyr)
+
+library(viridis)
+
+get_density <- function(x, y, n = 100) {
+  dens <- MASS::kde2d(x = x, y = y, n = n)
+  ix <- findInterval(x, dens$x)
+  iy <- findInterval(y, dens$y)
+  ii <- cbind(ix, iy)
+  return(dens$z[ii])
+}
+
+library(foreach)
+
+#Color blind palletes for making figures
+plot_col <- c('#66c2a5', '#fc8d62', '#8da0cb')
+cbbpalette <- c('#000000','#E69F00','#56B4E9')
+
+```
+
+#Thoughts
+Analyses we whould run. We should run the MI without the grade data in it. This will be informative for our analysis of the LASSO data.
+
+I also realized that I could set the seed for each loop using a function of G,R,P, iteration, and grade, which are all of trhe variables.
+
+# Purpose
+
+This file generates data sets based on the performance and grade models described in the Grades and Test Statistics pdf. Missing values are insterted into the generated data sets based on the participation rates from the Lonestar study. Missing values are then imputed for each simulated class using the MICE package. Missing data is only insterted for the posttest scores. This is approximately true for data collected in class with paper and pencil tests as the participation rates on the pretests tend to be very high. And, it makes the code and analysis easier to write and run.
+
+We calculate summary statistics (Mean, N, and SD) for each class for the pretest and posttest. For the complete dataset, we used all available data. For the missing dataset, we used complete case analysis to calculated these summary statistics. For the multiply imputed datasets we calculated these summary statistics using each of the ten imputed datasets and then averaged them. This means that the SE of the mean cannot be directly calculated from the SD because it does not account for the between imputation variance. It doesn't take overly long to run the analysis so if we want to focus on SE in the future we can retool the whole program for that specifically. The summary statistics for the imputed data sets only include the posttest. No data was missing for the pretest, so the complete pretest summary statistics are the same as the imputed pretest
+
+#Data Generation
+
+##Models for generating data and simulation parameters
+
+This chunk of code, builds the models that are used in generating the data.
+Parameters that define grade distributions, coures types, and participation rates were identified in an exploratory analysis of prior data and hard coded into data frames here. 
+
+```{r}
+dists <- data.frame(grade = c(4,3,2,1,0),
+                    ave = c(0.15,0.25,0.32,0.08,0.17),
+                    high = c(0.25,0.31,0.26,0.06,0.09),
+                    low = c(0.05,0.15,0.35,0.08,0.36))
+
+dists <- arrange(dists, grade)
+
+grade_dist <- data.frame(G=c(2,3,4),
+                         grade=c("Ave.","High","Low"))
+
+eq_course <- data.frame(Course = c(1,2,3,4,5),
+                        int_pre = c(25,25,25,25,25),
+                        slope_pre = c(2,2,2,2,2),
+                        int_post = c(43,43,43,25,58),
+                        slope_post = c(3,6,10,6,6))
+
+course_names <- data.frame(Course = c(1,2,3,4,5),
+                           Name = c("Low_Slope","Average","High_Slope","Low_Int.","High_Int."))
+
+part_rat <- data.frame(grade = c(0,1,2,3,4),
+                       zero = c(0.01,0.02,0.05,0.13,0.30),
+                       one = c(0.02,0.05,0.18,0.45,0.75),
+                       two = c(0.04,0.17,0.49,0.82,0.96),
+                       three = c(0.10,0.41,0.81,0.96,0.99),
+                       four = c(0.24,0.71,0.95,0.99,1.00))
+
+```
+## User defined functions
+
+Figure for grade distributions
+```{r, fig.height=2.5, fig.width=3.5}
+plot_col <- c('#66c2a5', '#fc8d62', '#8da0cb')
+cbbpalette <- c('#000000','#E69F00','#56B4E9')
+
+disty <- data.frame(grade = c("A","B","C","D","F"),
+                    Low = c(0.05,0.15,0.35,0.08,0.36),
+                    Average = c(0.15,0.25,0.32,0.08,0.17),
+                    High = c(0.25,0.31,0.26,0.06,0.09))
+
+forplot <- gather(disty, key=grade, value=value)
+colnames(forplot) <- c("grade","type","value")
+
+forplot$type <- factor(forplot$type, levels =c("Low","Average","High") )
+
+ggplot(data=forplot, aes(x=grade, y=value, fill=type)) +
+geom_bar(stat="identity", position = position_dodge())+
+  ggtitle("Grade Distributions")+
+  xlab("Grade") + ylab("Proportion")+
+  theme(legend.position = "none")+
+  scale_fill_manual(name="Grade Dist.",
+                     breaks= c("low","ave","high"),
+                     labels=c("Low","Average","High"),
+                     values=plot_col) +
+   facet_wrap(~type)
+```
+
+
+Function to calculate sd. 
+
+```{r}
+sd_eq<-function(x){
+  if (x <1 ) print("x should be in percent and range from 0 to 100")
+  if (x < 0) stop("'x' must be >= 1")
+  if (x > 100) stop("'x' must be <= 100")
+  -33.2*(x/100)^2+14.6*(x/100)+16.6}
+```
+## Code for generating data 
+
+This section of the code defines the variables for the course size and the number of courses. 
+
+G this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R participation rate it varies from 0 to 4 with zero being the lowest participation rates
+P This is the courses performance from the generator seed from 1:4
+
+
+This section of the code defines the variables for the course size and the number of courses. The GRP variables are useful for generating one set of data but will be integrated into for loops (or the like)
+```{r, echo=FALSE}
+C <- 1000 # this is the total class size
+K <- 2 #Number of courses
+G <- 2 #this is the grade distribution to use it varies from 2 to 4 with 2=ave, 3=high, 4=low
+R <- 1 #participation rate it varies from 0 to 4 with zero being the lowest participation rates
+P <- 2 #This is the courses performance from the generator seed from 1:5
+```
+
+This section builds a data frame that can be filled. It only builds the dataset for one course grade.
+
+```{r, echo=FALSE}
+#Makes a data frame to fill in the subsequent steps. This data frame is deleted. <- then why create it?? <- I didn't know another way to do it.
+#grade is stored in the dists[grade,% of that grade]
+#makes dataframe for summary statistics
+vars <- c("P", "G", "R", "iteration", 
+          paste("full_pre", c("mean", "sd", "n"), sep="_"), 
+          paste("full_post", c("mean", "sd", "n"), sep="_"), 
+          paste("miss_pre", c("mean", "sd", "n"), sep="_"), 
+          paste("miss_post", c("mean", "sd", "n"), sep="_"), 
+          "muim_post_mean", "muim_post_sd")
+
+all_df <- data.frame(matrix(NA, nrow=1, ncol=length(vars)))
+names(all_df) <- vars
+
+#makes dataframe for all of the data
+vars <- c("pre", "post", "grade","P","G","R","iteration","post_miss","intercept", "id",  paste("post_miss", 1:10, sep = "."))
+all_data <- data.matrix(matrix(NA, nrow=1, ncol=length(vars)))
+colnames(all_data) <- vars
+
+rm(vars)
+```
+
+Simulate average pre and post scores for $K$ classes of $C$ students each, using simulation parameters earlier defined. 
+
+```{r, eval=FALSE, include=FALSE}
+sim.class <- function(C=1000, G, P, R, grade.lvl, k){
+  set.seed(10000*G+1000*P+100*R+10*k+grade.lvl)
+  A_n    <-round(C*dists[grade.lvl,G],0) #Number of students with that grade 
+  A_mean <- eq_course[P,2]+dists[grade.lvl,1]*eq_course[P,3] #Mean pretest grade
+  A_sd   <- sd_eq(A_mean) #Pretest SD
+  B_mean <- eq_course[P,4]+dists[grade.lvl,1]*eq_course[P,5] #Posttest mean
+  B_sd   <- sd_eq(B_mean)  #posttest SD
+  
+  class <- data.frame(pre=rtnorm(A_n,A_mean,abs(A_sd),0,100), 
+                      post = rtnorm(A_n,B_mean,abs(B_sd),0,100), 
+                      grade = grade.lvl-1, P = P, G=G, R=R)
+  class$post_miss<-class$post
+  class$post_miss[1:round((1-part_rat[grade.lvl,R+2])*length(class$post_miss),digits = 0)] <-NA
+                     
+  return(class)
+}
+```
+
+Builds the dataframe of summary statistics for the simulated courses.
+```{r, eval=FALSE, include=FALSE}
+sim.set <- function(k=1){
+for(G in 2:4){
+for(P in 1:5){
+for(R in 0:4){
+    full <- foreach(j=1:5,.combine=rbind)%dopar%{sim.class(grade.lvl=j, k = k,G=G,R=R,P=P)}
+
+#This section calculates the MI data set
+set.seed(10000*G+1000*P+100*R+10*k)
+mi.out <-mice(full[c(7,1,3)],m=10) #this is the line that does the imputation
+complete_imp <- complete(mi.out, "broad") # this outputs the imputed values
+full<- cbind(full,complete_imp[c(1,4,7,10,13,16,19,22,25,28)])
+
+
+#Calculates the summary statistics for this class
+sum_df_miss <- full %>% filter (!is.na(post_miss)) %>% 
+                        summarise(miss_pre_mean=mean(pre), 
+                                  miss_pre_sd=sd(pre),
+                                  miss_pre_n=length(pre),
+                                  miss_post_mean=mean(post), 
+                                  miss_post_sd=sd(post),
+                                  miss_post_n=length(post))
+
+sum_df_full <- full %>% summarise(full_pre_mean=mean(pre), 
+                                  full_pre_sd=sd(pre),
+                                  full_pre_n=length(pre),
+                                  full_post_mean=mean(post), 
+                                  full_post_sd=sd(post),
+                                  full_post_n=length(post))
+
+df <- data.frame(P=P,
+                 G=G,
+                 R=R,
+                 iteration=k,
+                 muim_post_mean = mean(colMeans(full[c(8:17)])),
+                 muim_post_sd = mean(apply(full[c(8:17)],2,sd)))
+df<- bind_cols(df,sum_df_full,sum_df_miss)
+
+#Adds the rows to the new data frame.
+all_df <- bind_rows(all_df,df) 
+}}}
+return(all_df)}
+```
+
+
+```{r, eval=FALSE, include=FALSE}
+start_time <- Sys.time()
+all_df <- foreach(k=1:20,.combine=rbind)%dopar%{sim.set(k = k)}
+end_time <- Sys.time()
+end_time-start_time
+all_df <- all_df[complete.cases(all_df),]
+```
+
+```{r, eval=FALSE, include=FALSE}
+save(all_df, file = "data_set_8_3_total")
+```
+
+
+\newpage
+# Data Analysis
+
+This chunk of code uploads the dataset for analysis (not shown in pdf).
+```{r, include=FALSE}
+load("data_set_8_3_total")
+```
+
+
+### Scatterplot overlaying our simulated data and actual data.
+
+```{r, echo=FALSE, fig.align="center", fig.height=3.5, fig.width=7}
+#summary statistics for simulated data
+for_plot <- all_df %>% group_by(P,G) %>%summarise(pre=mean(full_pre_mean), post=mean(full_post_mean))
+
+#Data from the literature and from LASSO for FCI and FMCE scores in intro physics courses. I cleaned up some of the courses with small Ns. I'm not sure that this is the best way to deal with generating these figures because it will be a pain to update.
+test_data <- data.frame(
+pre_score= c(29.124030, 36.877497, 41.070776, 41.749879, 43.325543, 36.969200, 37.690919, 23.138178, 30.512600, 22.567452, 
+              31.566716, 34.761905, 55.314846, 29.930795, 24.504936, 36.904114, 31.353064, 29.248729, 23.880309, 37.971014,
+              49.075414, 32.739327, 23.901480, 29.772365, 34.421285, 29.176879, 35.337348, 34.130245,  
+              32.222222, 32.777778, 44.626005, 41.661636, 35.852498, 31.022252, 40.184057, 45.271081, 50.825866, 26.529950,
+              34.690106, 44.678795, 36.041667, 37.380952, 37.643208, 51.634665, 45.030114, 57.750812, 51.980888, 31.137358,
+              40.138195, 34.943715, 28.486673, 34.324469, 44.988432, 44.903660, 38.025836, 37.762412, 25.573306,
+              30.153913, 29.230769, 25.517007, 44.927536, 27.031625, 41.326343, 52.407774, 25.362083, 30.598964, 44.976520,
+              25.945376, 24.243432, 31.437841, 47.772601, 49.719407, 38.298860, 38.885059, 44.834293, 34.050400, 45.066032,
+              30.718826, 43.172490, 48.887511, 47.018401, 36.444988, 30.843887, 25.824843, 34.068115, 37.213510, 34.033918,
+              24.458738, 31.702783, 56.207625, 43.411992, 28.039345, 40.403902, 24.680787, 41.815797, 43.243243,
+              55.991135, 39.138565, 40.975391, 24.081238, 36.615293, 25.195969, 27.382054, 29.918572, 45.768654, 25.158730,
+              24.005569, 25.691057, 27.418984, 29.866798, 24.758345, 24.225106, 43.000000, 31.304348, 34.643272, 51.363636,
+              35.238095, 31.304348, 44.833333, 38.471410, 30.289855, 25.533333, 44.833333, 39.362581, 34.800000, 41.498450,
+              32.218845, 27.749616, 20.657621, 35.733334, 26.504431, 41.000000, 27.000000, 27.000000, 32.000000,
+              24.000000, 27.000000, 35.000000, 18.000000, 28.000000, 28.000000, 30.000000, 42.000000, 33.000000, 32.000000,
+              36.000000, 36.000000, 51.000000, 33.000000, 44.000000, 44.000000, 33.000000, 30.000000, 33.000000, 30.000000,
+              45.000000, 50.000000, 46.000000, 48.000000, 35.000000, 43.000000, 37.000000, 52.000000, 52.000000, 48.000000,
+              36.000000, 34.000000, 44.000000, 59.000000, 46.000000, 55.000000, 70.000000, 71.000000, 70.000000, 71.000000,
+              67.000000, 44.000000, 37.000000, 40.000000, 42.000000, 32.000000, 42.000000, 47.000000, 45.000000, 39.000000,
+              31.000000, 48.000000, 48.000000, 44.000000, 43.000000, 44.000000, 40.000000, 38.000000, 33.100000, 31.500000,
+              69.010000, 71.000000, 70.000000, 70.000000, 67.000000, 67.000000, 67.000000, 50.000000, 66.521000, 47.000000,
+              36.581395, 31.720930, 38.000000, 48.000000, 55.000000, 45.000000, 51.000000, 58.000000, 47.000000, 63.300000,
+              65.000000, 34.200000, 64.400000, 59.100000, 76.400000, 49.950000, 52.130000, 51.760000, 51.390000, 46.390000,
+              45.830000, 47.270000, 42.030000, 52.160000, 48.120000, 49.820000, 49.580000, 52.810000, 40.360000, 46.390000,
+              40.740000, 48.020000, 50.190000, 53.490000, 53.360000, 49.430000, 51.480000, 25.810000, 54.120000, 45.010000,
+              45.570000, 45.350000, 44.830000, 29.960000, 28.600000, 68.590044, 67.192308, 49.636058, 57.804902, 30.521908,
+              29.609909, 27.000000, 23.000000, 28.550000),
+post_score= c(43.31552, 46.64263, 72.53631, 75.08334, 74.52569, 66.47561, 63.19250, 32.42285, 43.98018, 22.34786, 37.72561, 45.19875,
+              72.58984, 48.85807, 52.45081, 71.41694, 46.59563, 55.31865, 65.83247, 66.90014, 73.73459, 47.49310, 39.33223, 46.78938,
+              54.22951, 44.35977, 63.98074, 45.24950, 49.58846, 54.84466, 55.93396, 62.34495, 38.04027, 37.72488,
+              47.86692, 62.72844, 60.60795, 33.24649, 49.95600, 64.77393, 63.24959, 56.33760, 73.74312, 82.62410, 62.65921, 83.99530,
+              79.68417, 47.64740, 52.58461, 51.84748, 51.42924, 56.85185, 53.33398, 68.61005, 69.93627, 59.19548, 40.75610,
+              38.31452, 39.23204, 35.24486, 55.09138, 32.13716, 56.75632, 61.17944, 36.51112, 50.28306, 60.28869, 43.48310, 48.47028,
+              60.20994, 61.28456, 67.47206, 63.13039, 74.36519, 57.04742, 60.00819, 67.76547, 65.72729, 67.97396, 65.06781, 69.87096,
+              51.64615, 58.58823, 32.75786, 59.82145, 50.69089, 51.15098, 24.81377, 56.97962, 72.22290, 51.39471, 37.53933, 62.26180,
+              46.80160, 57.09865, 53.77233, 67.05121, 56.01765, 60.43371, 35.57545, 49.08921, 43.00112, 38.54019, 45.35783,
+              68.67892, 39.47822, 40.94776, 33.73846, 35.07629, 35.44125, 36.00810, 29.34871, 62.23693, 47.83825, 61.60400, 69.28754,
+              52.82894, 48.37153, 62.64088, 56.48855, 50.82716, 35.52467, 61.83656, 54.22695, 50.87870, 60.08159, 52.79241, 
+              51.91212, 36.67550, 50.70111, 54.30591, 57.00000, 45.00000, 48.00000, 79.00000, 50.00000, 42.00000, 62.00000, 74.00000,
+              66.00000, 72.00000, 70.00000, 78.00000, 65.00000, 67.00000, 59.00000, 49.00000, 62.00000, 48.00000, 58.00000, 63.00000,
+              70.00000, 73.00000, 72.00000, 62.00000, 71.00000, 82.00000, 69.00000, 76.00000, 62.00000, 77.00000, 53.00000, 64.00000,
+              63.00000, 75.00000, 68.00000, 63.00000, 58.00000, 84.00000, 72.00000, 81.00000, 78.00000, 85.00000, 86.00000, 88.00000,
+              88.00000, 74.00000, 73.00000, 79.00000, 77.00000, 74.00000, 67.00000, 67.00000, 65.00000, 53.00000, 47.00000, 55.00000,
+              70.00000, 54.00000, 58.00000, 58.00000, 54.00000, 51.00000, 47.90000, 61.90000, 78.00000, 85.00000, 86.00000, 88.00000,
+              88.00000, 89.00000, 92.00000, 83.00000, 69.00000, 80.00000, 51.37209, 50.06977, 49.50000, 55.00000, 60.00000, 54.00000,
+              66.00000, 79.00000, 70.00000, 68.00000, 73.60000, 49.50000, 83.90000, 75.90000, 87.60000, 70.29500, 73.58311, 73.78200,
+              75.45900, 68.45620, 70.13000, 64.01000, 61.26000, 73.44000, 73.97000, 75.35000, 72.04000, 77.20000, 67.33000, 69.59000,
+              65.22000, 71.82000, 74.05000, 72.10000, 78.52000, 75.79000, 79.92000, 35.71000, 64.68000, 56.49000, 62.27000, 62.70000,
+              54.15000, 51.58000, 61.50000, 85.42753, 90.23846, 68.08828, 72.29555, 46.13382, 64.63373, 46.00000, 56.00000, 49.51000))
+
+BBB<-ggplot(test_data, aes(pre_score, post_score), alpha = 0.05) +
+  xlim(20,60) + ylim (20,80)+
+  geom_smooth(se=FALSE) +
+  geom_point(shape = 16, size = 0.5, show.legend = TRUE) +
+  theme_minimal() +
+  labs(x=expression(Prescore), y=expression(Postscore)) 
+BBB
+
+BBB+geom_point(data=for_plot, aes(x=pre, y=post, color=factor(G), shape = factor(P)),size=2, alpha=0.7)+theme(legend.position = 'right')+
+scale_color_manual(name="Grade Dist.",
+                     breaks= c("4","2","3"),
+                     labels=c("Low","Average","High"),
+                     values=cbbpalette) +
+  scale_shape_manual(name="Performance",
+                     breaks= c("3","5","2","4","1"),
+                     labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                     values = c(15,20,0,17,2))
+
+
+
+```
+
+
+Tables and figures for bias.
+```{r,echo=FALSE, fig.height = 4, fig.width = 7, fig.align = "center"}
+bias_table <- all_df %>% group_by(P,G,R) %>% summarize(full_post_mean = mean(full_post_mean),
+                                                       full_gain_mean = mean(full_post_mean-full_pre_mean),
+                                                       biaspost_cc = -mean(full_post_mean-miss_post_mean),
+                                                       biaspost_mi = -mean(full_post_mean-muim_post_mean),
+                                                       biasgain_cc = -mean(full_post_mean-full_pre_mean-(miss_post_mean-miss_pre_mean)),
+                                                       biasgain_mi = -mean(full_post_mean-full_pre_mean-(muim_post_mean-full_pre_mean)),
+                                                       part_rat = mean(miss_post_n/full_post_n))
+temp_tab_1 <- bias_table[c(1:3,6)]
+temp_tab_1$R <- temp_tab_1$R-0.1
+temp_tab_2 <- bias_table[c(1:3,7)]
+temp_tab_2$R <- temp_tab_2$R-0.1
+temp_tab <- left_join(temp_tab_1,temp_tab_2)
+
+#ggplot(bias_table, aes(x=R,y=biaspost_cc, color=factor(G), shape=factor(P))) + geom_point(size=4) +
+#  labs(x="Participation Rate", y="Posttest Bias") 
+
+#ggplot(bias_table, aes(x=R,y=biaspost_mi, color=factor(G), shape=factor(P))) + geom_point(size=4) +
+#  labs(x="Participation Rate", y="Posttest Bias") 
+
+
+temp_tab <- bias_table[c(1:3,6,7,10)]
+temp<- gather(temp_tab, key= bias, value=value, biaspost_cc,biaspost_mi)
+
+levels(temp$bias)
+bias_names <- c(
+  'biaspost_cc'="Complete Case",
+  'biaspost_mi'="MI")
+
+ggplot(temp, aes(x=part_rat,y=value, color=factor(G),linetype=factor(P), shape=factor(P)), fill=NA) + geom_point(size=1) +geom_line()+
+  labs(x="Participation Rate", y="Posttest Bias") +
+  facet_wrap(~bias, labeller = as_labeller(bias_names))+
+  theme(legend.position="right" ,legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),legend.text=element_text(size=8), legend.title = element_text(size=8))+
+  scale_color_manual(name="Grade Dist.",
+                     breaks= c("4","2","3"),
+                     labels=c("Low","Average","High"),
+                     values=cbbpalette) +
+  scale_linetype_manual(name="Performance",
+                          breaks= c("3","5","2","4","1"),
+                          labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                          values= c(3,1,5,4,2))+
+   scale_shape_manual(name="Performance",
+                     breaks= c("3","5","2","4","1"),
+                     labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                     values = c(15,20,0,17,2))
+
+```
+
+Summary table
+```{r, echo=FALSE}
+course_names <- data.frame(P = c(1,2,3,4,5),
+                           Performance = c("Low Slope","Average","High Slope","Low Int.","High Int."))
+grade_dist <- data.frame(G=c(2,3,4),
+                         Grade=c("Ave.","High","Low"))
+
+sum_tab <- all_df %>% group_by(P,G) %>% summarize(Pre = mean(full_pre_mean),
+                                                  Post = mean(full_post_mean))
+sum_tab$Gain <- sum_tab$Post-sum_tab$Pre
+
+sum_tab <- sum_tab %>%
+   gather(key = "key", value="value",Pre ,Post,Gain ) %>%
+   left_join(course_names, by="P") %>%
+   left_join(grade_dist, by="G")%>%
+   spread(key = key, value = "value") %>%
+   ungroup() %>%
+   select(-c(P,G))
+kable(sum_tab, digits = 1)
+```
+
+Analysis of standard error that is not included in the article.
+```{r, echo=FALSE, fig.height = 3, fig.width = 3.5, fig.align = "center"}
+library(Metrics)
+
+SE_table <- all_df %>% group_by(P,G,R) %>% summarize(SE_post_cc = sd(miss_post_mean),
+                                                                      SE_post_mi = sd(muim_post_mean) )
+ 
+bias_names <- c(
+  'SE_post_cc'="Complete Case",
+  'SE_post_mi'="MI")
+
+temp<- gather(SE_table, key= bias, value=value, SE_post_cc,SE_post_mi)
+temp <- left_join(temp,bias_table[c(1:3,10)],by = c("P", "G", "R"))
+AA<-ggplot(temp, aes(x=part_rat,y=value, color=factor(G),linetype=factor(P), shape=factor(P))) + geom_point(size=1) + geom_line()+
+  ylim( c(0,4))+
+  theme(legend.position = c(0.71,0.65),legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),legend.text=element_text(size=8), legend.title = element_text(size=8), plot.margin = unit(c(6,0,6,0),"pt"))+
+  labs(x="Participation Rate", y="Standard Error") +
+  facet_wrap(~bias, labeller = as_labeller(bias_names))+ 
+  scale_color_manual(name="Grade Dist.",
+                     breaks= c("4","2","3"),
+                     labels=c("Low","Average","High"),
+                     values=cbbpalette) +
+  scale_linetype_manual(name="Performance",
+                          breaks= c("3","5","2","4","1"),
+                          labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                          values= c(3,1,5,4,2))+
+   scale_shape_manual(name="Performance",
+                     breaks= c("3","5","2","4","1"),
+                     labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                     values = c(15,20,0,17,2))
+legend <- get_legend(AA)
+```
+
+```{r, echo=FALSE}
+SD_full_table <- all_df[!all_df$P==4,] %>% group_by(P,G) %>% summarize(SD_complete = sd(full_post_mean))
+SD_full_table$R <- 'Full' 
+
+bias_names <- c(
+  'SD_complete'="Full Data")
+
+
+BB<- ggplot(SD_full_table, aes(x=R,y=SD_complete, color=factor(G), shape=factor(P))) + geom_point(size=1) + 
+  labs(x='', y="Standard Error")+
+   ylim(c(0,4))+
+  theme(axis.title.y = element_blank(),axis.line.y = element_blank(),axis.ticks.y = element_blank(),axis.text.y = element_blank(), legend.position = c(0.1,.65),legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),legend.text=element_text(size=8), legend.title = element_text(size=8), plot.margin = unit(c(6,0,6,0),"pt"))+
+  scale_color_manual(name="Grade Dist.",
+                     breaks= c("4","2","3"),
+                     labels=c("Low","Average","High"),
+                     values=cbbpalette) +
+scale_linetype_manual(name="Performance",
+                          breaks= c("3","5","2","4","1"),
+                          labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                          values= c(3,1,5,4,2))+
+   scale_shape_manual(name="Performance",
+                     breaks= c("3","5","2","4","1"),
+                     labels= c("High_Slope","High_Int.","Average","Low_Int.","Low_Slope"),
+                     values = c(15,20,0,17,2))
+
+```
+
+```{r, echo=FALSE, fig.height = 4, fig.width = 7.3, fig.align = "center"}
+library(cowplot)
+CC <- ggdraw() +
+  draw_plot(AA + theme(legend.position = 'none'), 0, 0, .8, 1) +
+  draw_plot(BB + theme(legend.position = 'none'), .8, 0.005, .2, 1) 
+
+
+CC + draw_grob(legend, 0.7,0.3,0.2,0.6)
+
+
+```
+
+
+Makes the figure for the example in the discussion.
+```{r, echo=FALSE, fig.align="center", fig.height=2.5, fig.width=3.5}
+plot_col <- c('#66c2a5', '#fc8d62', '#8da0cb')
+cbbpalette <- c('#000000','#E69F00','#56B4E9')
+forplot <- data.frame(Analysis = c("True Gain","CC","MI"),
+                      AE = c(26.4,27.1,26.4),
+                      LB = c(21.5,26.1,22.1),
+                      Diff. = c(4.9,1.0,4.3))
+forplot <- gather(forplot,key=key,value=value,AE,LB,Diff.)
+
+#forplot <- data.frame(Analysis=c("True Gain","Complete Case","MI","True Gain","Complete Case","MI","True Gain","Complete Case","MI"),
+#                      key= c("Active Engagement","Active Engagement","Active Engagement","Lecture Based","Lecture Based","Lecture #Based","Difference","Difference","Difference"),
+#                      value=c(26.4,28.6,26.4,21.5,27.8,22.1,4.9,0.8,4.3))
+
+forplot$Analysis <- factor(forplot$Analysis, levels=c("True Gain","MI","CC"))
+forplot$key <- factor(forplot$key, levels=c("LB","AE","Diff."))
+
+ggplot(forplot, aes(y=value, x=key, fill=key))+geom_bar(stat="identity", position = position_dodge())+facet_wrap(~Analysis)+
+  scale_fill_manual(name="",
+                     breaks= c("LB","AE","Diff."),
+                     labels=c("LB","AE","Diff."),
+                     values=plot_col)+
+  ylab("Gain (%)")+
+  xlab("")+
+  theme(legend.position = "none",text = element_text(size=10),axis.text = element_text(size = 8))
+
+
+```
+
+```{r,echo=FALSE, fig.height = 3, fig.width = 3.5, fig.align = "center"}
+bias_table_pre <- all_df %>% group_by(G,R) %>% summarize(full_pre_mean = mean(full_pre_mean),
+                                                       biaspre_cc = -mean(full_pre_mean-miss_pre_mean),
+                                                       part_rat = mean(miss_post_n/full_post_n))
+bias_pre <-ggplot(bias_table_pre, aes(x=part_rat,y=biaspre_cc, color=factor(G))) + geom_point(size=1) +
+  geom_line()+
+  theme(legend.position = c(0.71,0.65),legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),legend.text=element_text(size=8), legend.title = element_text(size=8), plot.margin = unit(c(6,0,6,0),"pt"))+
+  labs(x="Participation Rate", y="Bias Pretest") +
+  scale_color_manual(name="Grade Dist.",
+                     breaks= c("4","2","3"),
+                     labels=c("Low","Average","High"),
+                     values=cbbpalette) 
+bias_pre
+```
+
+
+
+
+```{r}
+course_names <- data.frame(P = c(1,2,3,4,5),
+                           Performance = c("Low Slope","Average","High Slope","Low Int.","High Int."))
+grade_dist <- data.frame(G=c(2,3,4),
+                         Grade=c("Ave.","High","Low"))
+
+bias_tab <- all_df %>% group_by(P,G,R) %>% summarize(Post_Mean = mean(full_post_mean),
+                                                     Bias_CC = mean(miss_post_mean) - mean(full_post_mean),
+                                                    Bias_MI = mean(muim_post_mean) - mean(full_post_mean),
+                                                    Part.Rate = (mean(full_post_n)-mean(miss_post_n))/mean(full_post_n))
+
+
+bias_tab <- bias_tab %>%
+   gather(key = "key", value="value",Part.Rate,Post_Mean, Bias_CC ,Bias_MI ) %>%
+   left_join(course_names, by="P") %>%
+   left_join(grade_dist, by="G")%>%
+   spread(key = key, value = "value") %>%
+   ungroup() %>%
+   select(-c(P,G,R))
+kable(bias_tab, digits = 2)
+```
+
+```
+
+
+
